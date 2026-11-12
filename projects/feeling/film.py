@@ -70,8 +70,8 @@ def page_html(c, P, hide_nav_mark=False, hdr=None):
     card = lambda key, cx, cy, ch: c.crop(key, cx, cy, ch, CARD["s"], CARD["s"])[0]
     def card_html(x, title, img):
         return (f'<div style="position:absolute;left:{x}px;top:{CARD["y"]}px;width:{CARD["s"]}px;height:{CARD["s"]}px;overflow:hidden">{img}'
-                f'<div class="bhs white" style="position:absolute;left:24px;bottom:78px;font-size:60px;text-shadow:0 4px 6px rgba(0,0,0,.35)">{title}</div>'
-                f'<div style="position:absolute;left:24px;bottom:26px;padding:4px 24px;border:1px solid #fff;color:#fff;font:600 14px Afacad;'
+                f'<div id="ct_{title}" class="bhs white" style="position:absolute;left:24px;bottom:78px;font-size:60px;text-shadow:0 4px 6px rgba(0,0,0,.35)">{title}</div>'
+                f'<div id="cb_{title}" style="position:absolute;left:24px;bottom:26px;padding:4px 24px;border:1px solid #fff;color:#fff;font:600 14px Afacad;'
                 f'letter-spacing:.04em;background:rgba(255,255,255,.12);backdrop-filter:blur(16px)">ORDER NOW</div></div>')
     mark = "" if hide_nav_mark else "FEELING"
     return f'''<div style="position:absolute;left:0;top:0;width:{PAGE_W}px;height:1400px;background:#fff;transform-origin:0 0;transform:scale({P})">
@@ -164,20 +164,20 @@ def build(fmt):
     btn = (cx + 24 * P + 75 * P, cy + (CARD["s"] - 26 - 18) * P)
     c.cursor([(7.75, W * 0.78, H * 0.92), (8.62, btn[0], btn[1]), (9.0, btn[0] + 6, btn[1] + 4)],
              clicks=[t_click], start=7.75, end=t_click + 0.18)
+    # card -> world: ONE camera move. The page flies into the TEE card until its chest F sits centred at
+    # MATCH_F_H, the size and place the product shot opens on (C5). Labels on the card get out of the way first.
+    sc = CARD["s"] / 2350                                   # card crop scale (css px per original px)
     A_ = A.items["alleyfront"]
-    s0 = cs / 2350
-    l0 = min(0, max(cs - A_["ow"] * s0, cs / 2 - 1640 * s0)); t0 = min(0, max(cs - A_["oh"] * s0, cs / 2 - 1900 * s0))
-    sF = MATCH_F_H * u / 148
-    l1, t1 = W / 2 - 1752 * sF, H / 2 - 2048 * sF
-    def inset(x, y, w, h):
-        return f"inset({y:.1f}px {W-x-w:.1f}px {H-y-h:.1f}px {x:.1f}px)"
-    c.box(f'<div id="xw" style="position:absolute;inset:0;overflow:hidden">'
-          f'<img id="xi" src="assets/img/alleyfront.jpg" style="position:absolute;left:0;top:0;width:{A_["ow"]*s0:.1f}px;'
-          f'height:{A_["oh"]*s0:.1f}px;transform-origin:0 0"></div>', t_click + 0.03, t_end, z=20, id="xL")
-    lx, dur = c.t(t_click + 0.03), t_end - t_click - 0.03
-    c.tl(f'tl.set("#xw",{{clipPath:"{inset(cx, cy, cs, cs)}"}},0);tl.set("#xi",{{x:{cx+l0:.1f},y:{cy+t0:.1f},scale:1}},0);')
-    c.tl(f'tl.to("#xw",{{clipPath:"{inset(0, 0, W, H)}",duration:{dur},ease:"power3.inOut"}},{lx});')
-    c.tl(f'tl.to("#xi",{{x:{l1:.1f},y:{t1:.1f},scale:{sF/s0:.4f},duration:{dur},ease:"power3.inOut"}},{lx});')
+    l0c = min(0, max(CARD["s"] - A_["ow"] * sc, CARD["s"] / 2 - 1640 * sc))
+    t0c = min(0, max(CARD["s"] - A_["oh"] * sc, CARD["s"] / 2 - 1900 * sc))
+    FxP, FyP = (CARD["x1"] + l0c + 1752 * sc) * P, (CARD["y"] + t0c + 2048 * sc) * P   # F in page coords (pgw space)
+    k = MATCH_F_H * u / (148 * sc * P)
+    if A.up("alleyfront", sc * P * k) > 2.0:
+        c.warn.append(f"alleyfront at match {A.up('alleyfront', sc*P*k):.2f}x")
+    lz = c.t(t_click + 0.05)
+    c.tl(f'tl.to("#ct_TEE,#cb_TEE,#ct_HOODIE,#cb_HOODIE",{{opacity:0,duration:0.12,ease:"power2.out"}},{lz});')
+    c.tl(f'tl.set("#pgw",{{transformOrigin:"0px 0px"}},{lz});')
+    c.tl(f'tl.to("#pgw",{{x:{W/2 - FxP*k:.1f},y:{H/2 - FyP*k:.1f},scale:{k:.4f},duration:{t_end - t_click - 0.05:.3f},ease:"power3.inOut"}},{lz});')
     sfx += [("whoosh", t_store + 0.05, 0.35), ("whoosh", t_scroll, 0.3), ("click", t_click, 0.9), ("whoosh", t_click + 0.1, 0.45)]
 
     # ============ C5 9.445–12.605  product page: match cut F->F, pick M, Checkout; the page dies to black: AI-CRAFTED.
@@ -202,7 +202,13 @@ def build(fmt):
     c.box(f'''<div id="pp" style="position:absolute;left:0;top:0;width:{W}px;height:{H}px;background:#fff;transform-origin:0 0">
   <img src="assets/img/teefront.jpg" style="position:absolute;left:{ix:.1f}px;top:{iy:.1f}px;width:{TF["ow"]*si:.1f}px;height:{TF["oh"]*si:.1f}px">
   {info}</div>''', 9.445, 12.605, z=1, id="ppL", style="background:#000")
-    c.tl(f'tl.fromTo("#pp",{{x:{W/2 - Fx*zs:.1f},y:{H/2 - Fy*zs:.1f},scale:{zs:.4f}}},{{x:0,y:0,scale:1,duration:0.9,ease:"power3.inOut"}},0);')
+    c.tl(f'tl.fromTo("#pp",{{x:{W/2 - Fx*zs:.1f},y:{H/2 - Fy*zs:.1f},scale:{zs:.4f}}},{{x:0,y:0,scale:1,duration:0.9,ease:"power3.inOut"}},0.07);')
+    # the worn tee (last frame of C4, identical framing) dissolves into the product shot over 4 frames
+    sF = MATCH_F_H * u / 148
+    AF = A.items["alleyfront"]
+    c.box(f'<img src="assets/img/alleyfront.jpg" style="position:absolute;left:{W/2-1752*sF:.1f}px;top:{H/2-2048*sF:.1f}px;'
+          f'width:{AF["ow"]*sF:.1f}px;height:{AF["oh"]*sF:.1f}px">', 9.445, 9.445 + 5 / FPS, z=30, id="worn")
+    c.tl(f'tl.fromTo("#worn",{{opacity:1}},{{opacity:0,duration:{4/FPS:.4f},ease:"none"}},0);')
     mx = ux + sz + round(14 * u) + sz / 2; my = uy + round(70*u) + round(14*u) + round(40*u)*1.25 + round(40*u) + sz / 2
     ckx = ux + 310 * u; cky = my + sz / 2 + round(30*u) + round(34*u)*1.3 + round(30*u) + 44 * u
     t_m, t_ck, t_ai = 10.535, 11.225, 11.26
