@@ -82,19 +82,46 @@ def mix(music, offset, length, out_wav, mutes=(), fade_out=None, events=(), musi
         i = int((ft + FRAME) * SR)
         j = min(len(s), i + len(y))
         s[i:j] += y[: j - i, None]
-    mixw = m + s
+    mixw = (m + s).astype(np.float32)
+    return master(mixw, out_wav, lufs, tp)
+
+
+def _integrated(x):
     with tempfile.TemporaryDirectory() as td:
-        raw = Path(td) / "mix.f32"
-        mixw.astype(np.float32).tofile(raw)
-        base = ["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", str(raw)]
-        # pass 1: measure
-        r = subprocess.run([x if x != "error" else "info" for x in base] + ["-af", f"loudnorm=I={lufs}:TP={tp}:LRA=11:print_format=json", "-f", "null", "-"],
-                           capture_output=True, text=True)
-        js = json.loads(r.stderr[r.stderr.rfind("{"):])
-        af = (f"loudnorm=I={lufs}:TP={tp}:LRA=11:measured_I={js['input_i']}:measured_TP={js['input_tp']}:"
-              f"measured_LRA={js['input_lra']}:measured_thresh={js['input_thresh']}:offset={js['target_offset']}:linear=true,"
-              f"alimiter=limit={10**((tp-1.6)/20):.4f}:level=disabled,aresample={SR}")
-        subprocess.run(base + ["-af", af, "-c:a", "pcm_s16le", str(out_wav)], check=True)
+        raw = Path(td) / "x.f32"
+        x.astype(np.float32).tofile(raw)
+        r = subprocess.run(["ffmpeg", "-v", "info", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", str(raw),
+                            "-af", "ebur128", "-f", "null", "-"], capture_output=True, text=True).stderr
+    return float(r[r.rfind("Summary:"):].split("I:")[1].split("LUFS")[0])
+
+
+def limit(x, ceiling_db, look_ms=3.0, release_ms=80.0):
+    """Look-ahead brickwall on sample peaks (deterministic, no overshoot in the WAV)."""
+    from scipy.ndimage import minimum_filter1d
+    c = 10 ** (ceiling_db / 20)
+    peak = np.abs(x).max(1) + 1e-12
+    need = np.minimum(1.0, c / peak)
+    la = max(1, int(SR * look_ms / 1000))
+    g = minimum_filter1d(need, size=2 * la + 1, origin=0)        # gain already down when the peak arrives
+    rel = np.exp(-1 / (SR * release_ms / 1000))
+    out = np.empty_like(g); cur = 1.0
+    for i, v in enumerate(g):                                  # instant attack, smooth release
+        cur = v if v < cur else v + (cur - v) * rel
+        out[i] = cur
+    return x * out[:, None].astype(np.float32)
+
+
+def master(x, out_wav, lufs=-16.0, tp=-1.5):
+    """Gain to target LUFS, then limit sample peaks 1.5 dB under the true-peak target:
+    AAC adds up to ~1.5 dB on transients (LESSONS), so the MP4 lands <= tp."""
+    for _ in range(2):                                         # limiting costs a little loudness: re-trim once
+        x = x * 10 ** ((lufs - _integrated(x)) / 20)
+        x = limit(x, tp - 1.5)
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "m.f32"
+        x.astype(np.float32).tofile(raw)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", str(raw),
+                        "-c:a", "pcm_s24le", str(out_wav)], check=True)
     return out_wav
 
 

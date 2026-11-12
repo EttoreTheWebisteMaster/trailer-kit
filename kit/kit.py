@@ -233,13 +233,19 @@ class Chunk:
         return self.box("", start, end, z, style=f"background:{color}")
 
     def words(self, words, times, end, x, y, cls, align="center", z=40, gap="0.22em",
-              enter="cut", color=None, id=None):
+              enter="cut", color=None, id=None, accent="#E01010"):
         """One line of words, each appearing at its own film time (on the beat).
-        enter: cut (hard) | slam (scale 1.12->1 in 3 frames) | blur | grey."""
+        enter: cut (hard) | slam (scale 1.12->1 in 3 frames) | blur | grey |
+        flicker (letters strike on like a failing tube, deterministic) |
+        impact (hard slam 1.3->1 with an `accent` offset shadow snapping home, no blur)."""
         id = id or self.uid("w")
         tr = {"center": "translate(-50%,-50%)", "left": "translate(0,-50%)", "right": "translate(-100%,-50%)"}[align]
+        def inner(i, w):
+            if enter != "flicker":
+                return w
+            return "".join(f'<span id="{id}_{i}_{j}" style="opacity:0">{ch}</span>' for j, ch in enumerate(w))
         spans = "".join(f'<span class="wd" id="{id}_{i}" style="display:inline-block;margin-right:{gap if i<len(words)-1 else 0};'
-                        f'opacity:0">{w}</span>' for i, w in enumerate(words))
+                        f'opacity:0">{inner(i, w)}</span>' for i, w in enumerate(words))
         col = f"color:{color};" if color else ""
         self.box(f'<div class="{cls}" style="position:absolute;left:{x}px;top:{y}px;transform:{tr};'
                  f'white-space:nowrap;text-align:{align};{col}">{spans}</div>', times[0], end, z, id=id)
@@ -252,6 +258,16 @@ class Chunk:
                 self.tl(f'tl.set("{sel}",{{opacity:1,scale:1.12}},{lt});tl.to("{sel}",{{scale:1,duration:{3/FPS},ease:"power2.out"}},{lt});')
             elif enter == "blur":
                 self.tl(f'tl.fromTo("{sel}",{{opacity:0,filter:"blur(14px)",y:8}},{{opacity:1,filter:"blur(0px)",y:0,duration:0.35,ease:"power3.out"}},{lt});')
+            elif enter == "flicker":
+                self.tl(f'tl.set("{sel}",{{opacity:1}},{lt});')
+                for j in range(len(words[i])):
+                    f0 = (j * 7 + i * 3) % 5                      # frames: on, off, on (stays)
+                    for k, (df, op) in enumerate(((f0, 1), (f0 + 1, 0.15), (f0 + 3, 1))):
+                        self.tl(f'tl.set("#{id}_{i}_{j}",{{opacity:{op}}},{lt + df / FPS:.4f});')
+            elif enter == "impact":
+                self.tl(f'tl.set("{sel}",{{opacity:1,scale:1.3,textShadow:"22px -10px 0 {accent}"}},{lt});'
+                        f'tl.to("{sel}",{{scale:1,duration:{3/FPS},ease:"power3.out"}},{lt});'
+                        f'tl.to("{sel}",{{textShadow:"0px 0px 0 {accent}",duration:{5/FPS},ease:"power2.out"}},{lt});')
             elif enter == "grey":
                 self.tl(f'tl.set("{sel}",{{opacity:1,color:"#B5B5B5"}},{lt});tl.to("{sel}",{{color:"inherit",duration:0.25}},{lt+0.12});')
         # LESSONS: hold >= 0.5 s + 0.3 s/word (min 1.2)

@@ -51,7 +51,7 @@ def assets():
     A.video("v_cell2", ad, 51.6, 2.4, F=(990, 300))
     A.video("v_crowd", ad, 39.1, 3.0, lead=(1040, 440))
     A.video("v_end", ad, 62.2, 3.0, z=(1220, 380))
-    A.frame("f_neon", ad, 50.6, F=(990, 300))
+    A.video("v_neon", ad, 50.55, 2.3, F=(990, 300))
     return A
 
 
@@ -111,19 +111,30 @@ def build(fmt):
         c.flat(RED, t, t + 2 / FPS, z=30)
     sfx += [("heart", 0.0, 0.9), ("heart", 1.225, 0.8), ("heart", 1.915, 0.9)]
 
-    # ============ C2 2.605–4.70  hard stop on the ad's neon-F frame, music cut; zoom through the F into red
+    # ============ C2 2.605–4.70  hard stop: the ad's own cut, eyes -> the neon F over the crowd (live, slow push).
+    # Music cut. Type stacked low: BACK FROM THE strikes on like a failing tube, DEAD. hits hard on the beat
+    # with a red offset snapping home and a camera jolt. Then the world rushes through the F behind the type.
     c = F.chunk("stop", t_freeze, DROP_FILM)
-    t_zoom = 4.40
-    c.photo("f_neon", "F", zoom=1.0, push=1.05, start=t_freeze, end=DROP_FILM, ease="sine.inOut",
-            vign=0.75, filt="filter:brightness(.7)", id="fld")
+    t_zoom, t_dead = 4.36, 3.305
+    c.photo("v_neon", "F", zoom=1.0, push=1.06, start=t_freeze, end=DROP_FILM, ease="sine.inOut",
+            vign=0.8, filt="filter:brightness(.62) contrast(1.1)", id="fld")
     lt = c.t(t_zoom)
     c.tl(f'tl.to("#fldc",{{scale:9,duration:{DROP_FILM-t_zoom},ease:"power3.in"}},{lt});')
+    ld = c.t(t_dead)                                    # impact jolt on DEAD.
+    for k, (dx, dy) in enumerate(((14, -9), (-10, 7), (6, -4), (0, 0))):
+        c.tl(f'tl.set("#fld",{{x:{dx*u:.1f},y:{dy*u:.1f}}},{ld + k / FPS:.4f});')
+    fsA, fsB = round(L.pick(72, 66) * u), round(L.pick(330, 250) * u)
+    yA = L.pick(0.60 * H, 0.58 * H)
+    yB = yA + fsA * 0.55 + fsB * 0.5
+    c.words(["BACK", "FROM", "THE"], [2.75, 2.92, 3.09], t_zoom + 0.22, W / 2, yA, "bhs white", enter="flicker",
+            gap="0.5em", id="hkA")
+    c.words(["DEAD."], [t_dead], t_zoom + 0.22, W / 2, yB, "bhs white", enter="impact", accent=RED, id="hkB")
+    c.style(f"#hkA .bhs{{font-size:{fsA}px;letter-spacing:.32em}} #hkB .bhs{{font-size:{fsB}px;letter-spacing:-.01em}}")
+    # the type is pulled into the F with the world in the last frames (parallax: it trails the background)
+    c.tl(f'tl.to("#hkA,#hkB",{{scale:1.8,opacity:0,transformOrigin:"50% 28%",duration:0.22,ease:"power3.in"}},{lt + 0.06});')
     c.flat(RED, DROP_FILM - 2 / FPS, DROP_FILM, z=45)
-    fs = round(L.pick(118, 112) * u)
-    c.words(["BACK", "FROM", "THE", "DEAD."], [2.75, 3.0, 3.305, 3.65], t_zoom + 0.05,
-            W / 2, L.pick(0.84 * H, 0.72 * H), "bhs white", enter="slam", z=40, id="hook")
-    c.style(f"#hook .bhs{{font-size:{fs}px}}")
-    sfx += [("thud", t_freeze, 1.0), ("whoosh", t_zoom - 0.05, 0.8)]
+    sfx += [("thud", t_freeze, 0.9), ("tick", 2.75, 0.5), ("tick", 2.92, 0.5), ("tick", 3.09, 0.5),
+            ("hit", t_dead, 1.0), ("whoosh", t_zoom - 0.05, 0.8)]
 
     # ============ C3 4.70–6.055  drop: the ad's own lockup, white on black, red fog breathing behind
     t_store = 6.055

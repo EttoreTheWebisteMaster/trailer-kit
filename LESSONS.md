@@ -20,7 +20,7 @@
 - Chunk lengths are cut on the film frame grid (`round(t1*30) - round(t0*30)`), or the film drifts a frame.
 - Don't force a silence beat on tracks with no drop to rise into (Roaster / Take Five).
 - Drop: RMS-scan at 50 ms around the breakdown; `offset = drop_in_song − reveal_time`; confirm the peak in the render.
-- Hard broadband transients (clicks) overshoot ~3 dB after AAC: give them a 1 ms attack and measure true peak on the MP4, not the WAV.
+- Hard transients overshoot up to ~3 dB after AAC, and ffmpeg alimiter did not cap the drop: kit/mix.py masters with its own look-ahead limiter 1.5 dB under target. Always measure true peak on the MP4.
 - SFX quiet and few; synthesized ones live in `kit/mix.py`.
 
 ## Look
