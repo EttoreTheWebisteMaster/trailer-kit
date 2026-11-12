@@ -48,6 +48,21 @@ class Assets:
             ow, oh = im.size
         self.items[key] = dict(src=src, ow=ow, oh=oh, focus=focus, max_px=max_px or self.max_px)
 
+    def video(self, key, src, t0, dur, **focus):
+        """A clip cut from a source video (t0..t0+dur in the source), placed like a still."""
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height",
+                            "-of", "csv=p=0", str(self.root / src)], capture_output=True, text=True, check=True)
+        ow, oh = map(int, r.stdout.strip().split(","))
+        self.items[key] = dict(src=src, ow=ow, oh=oh, fw=ow, fh=oh, focus=focus, kind="video", t0=t0, dur=dur)
+
+    def frame(self, key, src, t, **focus):
+        """A still pulled from a video at source time t (a freeze frame)."""
+        dst = self.root / "_frames" / f"{key}.png"
+        dst.parent.mkdir(exist_ok=True)
+        if not dst.exists():
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", str(self.root / src), "-frames:v", "1", str(dst)], check=True)
+        self.add(key, f"_frames/{key}.png", **focus)
+
     def up(self, key, display_scale):
         """Upscale factor vs the shipped file for a display scale given in ORIGINAL px."""
         it = self.items[key]
@@ -58,6 +73,16 @@ class Assets:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         for k, it in self.items.items():
+            if it.get("kind") == "video":
+                vd = out.parent / "vid"
+                vd.mkdir(exist_ok=True)
+                dst = vd / f"{k}.mp4"
+                if not dst.exists():
+                    tmp = vd / f"_tmp_{k}.mp4"
+                    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(it["t0"]), "-i", str(self.root / it["src"]), "-t", str(it["dur"]),
+                                    "-an", "-c:v", "libx264", "-crf", "14", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-g", "12", str(tmp)], check=True)
+                    tmp.rename(dst)
+                continue
             dst = out / f"{k}.jpg"
             src = self.root / it["src"]
             want = round(min(1.0, it["max_px"] / max(it["ow"], it["oh"])) * it["ow"])
@@ -114,12 +139,20 @@ class Chunk:
         id = id or self.uid("b")
         s = self.t(start if start is not None else self.t0)
         e = self.t(end if end is not None else self.t1)
+        if "<video" in html:
+            # LESSONS: a timed <video> must not sit inside a timed wrapper (frames come out wrong).
+            # Wrapper visibility goes through GSAP instead; the video keeps its own data-start.
+            self.add(f'<div id="{id}" class="layer {cls}" style="z-index:{z};opacity:0;{style}">{html}</div>')
+            self.tl(f'tl.set("#{id}",{{opacity:1}},{max(0,s)});')
+            if e < self.dur - 1e-6:
+                self.tl(f'tl.set("#{id}",{{opacity:0}},{e});')
+            return id
         self.add(f'<div id="{id}" class="clip layer {cls}" data-start="{max(0,s)}" '
                  f'data-duration="{round(e-max(0,s),4)}" style="z-index:{z};{style}">{html}</div>')
         return id
 
     def photo(self, key, focus, at=None, zoom=1.0, push=None, start=None, end=None, z=1,
-              frame=None, filt="", id=None, ease="none", dof=None, vign=None, shake=0):
+              frame=None, filt="", id=None, ease="none", dof=None, vign=None, shake=0, offset=0):
         """Full-cover still. `focus` = point in source px (or a named focus) placed at
         `at` (frame px, default centre). `push` = end zoom multiplier (camera move about
         the focus point). `frame` = (x,y,w,h) window instead of full frame."""
@@ -139,10 +172,16 @@ class Chunk:
         if up > MAX_UPSCALE + 1e-6:
             self.warn.append(f"{key}: upscale {up:.2f}x > {MAX_UPSCALE}x")
         id = id or self.uid("p")
+        geo = f'position:absolute;left:{left:.1f}px;top:{top:.1f}px;width:{A["ow"]*s:.1f}px;height:{A["oh"]*s:.1f}px;{filt}'
+        if A.get("kind") == "video":
+            vs = self.t(start if start is not None else self.t0)
+            ve = self.t(end if end is not None else self.t1)
+            media = (f'<video id="{id or "v"}_v{self.n}" class="clip" src="assets/vid/{key}.mp4" muted playsinline preload="auto" '
+                     f'data-start="{max(0,vs)}" data-duration="{round(ve-max(0,vs),4)}" data-media-start="{offset}" style="{geo}"></video>')
+        else:
+            media = f'<img src="assets/img/{key}.jpg" style="{geo}">'
         img = (f'<div class="cam" id="{id}c" style="position:absolute;left:0;top:0;width:{W}px;height:{H}px;'
-               f'transform-origin:{ox:.1f}px {oy:.1f}px">'
-               f'<img src="assets/img/{key}.jpg" style="position:absolute;left:{left:.1f}px;top:{top:.1f}px;'
-               f'width:{A["ow"]*s:.1f}px;height:{A["oh"]*s:.1f}px;{filt}"></div>')
+               f'transform-origin:{ox:.1f}px {oy:.1f}px">{media}</div>')
         extra = ""
         if dof:
             extra += self.dof_html(*dof, W=W, H=H, at=(ox, oy))
@@ -312,7 +351,7 @@ class Film:
 
     def chunk_hash(self, d):
         h = hashlib.sha1((d / "index.html").read_bytes())
-        for img in sorted((d / "assets" / "img").glob("*.jpg")):
+        for img in sorted(list((d / "assets" / "img").glob("*.jpg")) + list((d / "assets" / "vid").glob("*.mp4"))):
             if img.stem in (d / "index.html").read_text():
                 h.update(img.read_bytes()[:4096] + str(img.stat().st_size).encode())
         return h.hexdigest()[:16]

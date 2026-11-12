@@ -44,7 +44,11 @@ def sfx(kind, seed=1):
             y[m] += g * np.sin(2 * np.pi * (55 + 30 * np.exp(-xx * 30)) * xx) * np.exp(-xx * 16)
         return y
     if kind == "click":
-        x = t(0.05); return (_noise(len(x), seed) * np.exp(-x * 220) * 0.6 + np.sin(2 * np.pi * 3200 * x) * np.exp(-x * 300) * 0.4)
+        # soft-attack click: hard broadband transients overshoot ~3 dB after AAC (LESSONS)
+        x = t(0.05); nz = np.convolve(_noise(len(x), seed), np.ones(6) / 6, "same")
+        y = nz * np.exp(-x * 220) * 0.5 + np.sin(2 * np.pi * 2400 * x) * np.exp(-x * 300) * 0.4
+        y[:48] *= np.linspace(0, 1, 48)
+        return y
     if kind == "tick":
         x = t(0.03); return np.sin(2 * np.pi * 2100 * x) * np.exp(-x * 400)
     if kind == "whoosh":     # band-swept noise, rises then falls
@@ -89,7 +93,7 @@ def mix(music, offset, length, out_wav, mutes=(), fade_out=None, events=(), musi
         js = json.loads(r.stderr[r.stderr.rfind("{"):])
         af = (f"loudnorm=I={lufs}:TP={tp}:LRA=11:measured_I={js['input_i']}:measured_TP={js['input_tp']}:"
               f"measured_LRA={js['input_lra']}:measured_thresh={js['input_thresh']}:offset={js['target_offset']}:linear=true,"
-              f"alimiter=limit={10**((tp-0.3)/20):.4f}:level=disabled,aresample={SR}")
+              f"alimiter=limit={10**((tp-1.6)/20):.4f}:level=disabled,aresample={SR}")
         subprocess.run(base + ["-af", af, "-c:a", "pcm_s16le", str(out_wav)], check=True)
     return out_wav
 

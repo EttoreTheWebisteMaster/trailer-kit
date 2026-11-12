@@ -3,3 +3,4 @@ out/
 __pycache__/
 projects/*/assets/img/
 projects/*/audio/*.mp3
+projects/*/assets/video/
