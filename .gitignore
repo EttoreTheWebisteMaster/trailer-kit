@@ -1,0 +1,5 @@
+build/
+out/
+__pycache__/
+projects/*/assets/img/
+projects/*/audio/*.mp3
